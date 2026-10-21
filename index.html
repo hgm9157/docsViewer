@@ -120,7 +120,7 @@ body.dragging .pick { outline: 4px dashed var(--accent); outline-offset: 6px; }
 }
 .safe svg { width: 28px; height: 28px; flex: none; color: var(--accent); margin-top: 2px; }
 
-.home { min-height: 100%; justify-content: center; align-items: stretch; text-align: center; gap: 24px; padding-block: 18vh 40px; }
+.home { box-sizing: border-box; min-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); min-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); justify-content: center; align-items: stretch; text-align: center; padding-block: 24px; }
 .title { margin: 0; font-family: var(--display); font-weight: 700; font-size: 2.4rem; }
 .pick { min-height: 140px; font-size: 2rem; }
 .hint { margin: 0; color: var(--muted); font-size: 1.05rem; }
@@ -202,7 +202,7 @@ body.dragging .pick { outline: 4px dashed var(--accent); outline-offset: 6px; }
 @media (max-width: 420px) {
   body { font-size: 19px; }
   .brand h1 { font-size: 1.85rem; }
-  .pick { font-size: 1.45rem; min-height: 104px; }
+  .pick { font-size: 2rem; min-height: 160px; }
   .tbtn .lbl { display: none; }
   .tbtn.back .lbl { display: inline; }
 }
@@ -240,9 +240,7 @@ img { max-width: 100%; }
   accept=".hwp,.hwpx,.docx,.pdf,.xlsx,.xls,.csv,.jpg,.jpeg,.png,.gif,.webp,.heic,application/pdf,image/*">
 
 <main id="home" class="home">
-  <h1 class="title">문서 보기</h1>
   <label for="file" class="pick" id="pickBtn" tabindex="0" role="button">문서 열기</label>
-  <p class="hint">한글 · 워드 · PDF · 엑셀 · 사진</p>
 </main>
 
 <section id="viewer" hidden>
