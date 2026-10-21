@@ -7,6 +7,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="문서 보기">
 <title>문서 보기</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@700&family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;700&family=Nanum+Gothic&family=Nanum+Myeongjo&display=swap">
@@ -551,6 +554,27 @@ img { max-width: 100%; }
 
   fileInput.addEventListener('change', () => openFile(fileInput.files[0]));
   $('pickBtn').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } });
+  /* files shared from other apps (Android share sheet → sw.js) */
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+  (async () => {
+    const q = new URLSearchParams(location.search).get('shared');
+    if (!q) return;
+    history.replaceState(null, '', location.pathname);
+    if (q !== '1') { showViewer('공유된 문서'); fail('문서를 받지 못했어요', '카카오톡에서 다시 공유해 보세요.'); return; }
+    try {
+      const cache = await caches.open('shared-file-v1');
+      const key = new URL('./__shared__', location.href).href;
+      const res = await cache.match(key);
+      if (!res) return;
+      const name = decodeURIComponent(res.headers.get('X-File-Name') || '문서');
+      const blob = await res.blob();
+      await cache.delete(key);
+      openFile(new File([blob], name, { type: blob.type }));
+    } catch { showViewer('공유된 문서'); fail('문서를 받지 못했어요', '카카오톡에서 다시 공유해 보세요.'); }
+  })();
+
   /* drag & drop on desktop */
   let dragDepth = 0;
   window.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepth++; document.body.classList.add('dragging'); });
