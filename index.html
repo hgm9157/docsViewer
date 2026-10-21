@@ -198,6 +198,18 @@ body.dragging .pick { outline: 4px dashed var(--accent); outline-offset: 6px; }
 .err { background: var(--warn-bg); color: var(--warn-fg); border-radius: 18px; padding: 24px 22px; display: grid; gap: 10px; }
 .err .big { color: var(--warn-fg); }
 
+.pw { gap: 16px; }
+.pw .sub b { color: var(--fg); }
+.pw-input {
+  box-sizing: border-box; width: 100%; min-height: 76px; padding: 0 20px;
+  font: inherit; font-size: 2rem; letter-spacing: .12em; text-align: center; font-variant-numeric: tabular-nums;
+  color: var(--fg); background: var(--surface); border: 3px solid var(--line); border-radius: 18px;
+}
+.pw-input:focus { border-color: var(--accent); outline: none; }
+.pw-go { width: 100%; box-sizing: border-box; min-height: 96px !important; font-size: 1.7rem !important; }
+.pw-wrong { margin: 0; background: var(--warn-bg); color: var(--warn-fg); border-radius: 14px; padding: 12px 16px; font-weight: 700; }
+.pw-kbd { background: none; border: 0; color: var(--muted); text-decoration: underline; font: inherit; font-size: 1rem; padding: 10px; min-height: 48px; cursor: pointer; }
+
 @media (prefers-reduced-motion: reduce) {
   .spinner { animation-duration: 3s; }
   .pick { transition: none; }
@@ -354,6 +366,35 @@ img { max-width: 100%; }
     $('againBtn').onclick = () => fileInput.click();
   }
   $('backBtn').onclick = showHome;
+
+  /* password prompt: resolves with what the person typed */
+  function askPassword(wrong) {
+    return new Promise((resolve) => {
+      statusBox.innerHTML = `<form class="status pw" id="pwForm" autocomplete="off">
+        <p class="big">비밀번호가 걸린 문서예요</p>
+        <p class="sub">카드 명세서나 보험 서류는 보통 <b>생년월일 6자리</b>예요.<br>(예: 1955년 3월 12일 → 550312)</p>
+        ${wrong ? '<p class="pw-wrong" role="alert">비밀번호가 맞지 않아요. 다시 넣어 주세요.</p>' : ''}
+        <input id="pwInput" class="pw-input" type="text" inputmode="numeric" autocomplete="off"
+          autocapitalize="off" spellcheck="false" aria-label="비밀번호" placeholder="비밀번호">
+        <button type="submit" class="pick pw-go">열기</button>
+        <button type="button" class="pw-kbd" id="pwKbd">영어나 기호가 섞여 있어요</button>
+      </form>`;
+      const input = $('pwInput');
+      $('pwKbd').onclick = () => {
+        const toText = input.getAttribute('inputmode') === 'numeric';
+        input.setAttribute('inputmode', toText ? 'text' : 'numeric');
+        $('pwKbd').textContent = toText ? '숫자만 넣을래요' : '영어나 기호가 섞여 있어요';
+        input.blur(); input.focus();
+      };
+      $('pwForm').onsubmit = (e) => {
+        e.preventDefault();
+        const v = input.value.trim();
+        if (!v) { input.focus(); return; }
+        resolve(v);
+      };
+      setTimeout(() => input.focus(), 50);
+    });
+  }
   $('printBtn').onclick = () => window.print();
 
   /* ---------- page helpers ---------- */
@@ -428,8 +469,19 @@ img { max-width: 100%; }
     try { doc = new mod.HwpDocument(bytes); }
     catch (e) {
       const m = String(e && (e.message || e));
-      if (/암호|password|encrypt/i.test(m)) throw new UserError('암호가 걸린 문서예요', '문서를 보내준 분께 암호 없이 다시 보내 달라고 부탁해 보세요.');
-      throw e;
+      if (!/비밀번호|암호|password|encrypt/i.test(m)) throw e;
+      let wrong = false;
+      while (!doc) {
+        const pw = await askPassword(wrong);
+        busy('한글 문서를 여는 중이에요');
+        try { doc = mod.HwpDocument.openWithPassword(bytes, pw); }
+        catch (e2) {
+          const m2 = String(e2 && (e2.message || e2));
+          if (/일치하지|암호 오류|password/i.test(m2)) { wrong = true; continue; }
+          if (/DRM|지원하지/.test(m2)) throw new UserError('보안 프로그램이 걸린 문서라 열 수 없어요', '보내준 분께 PDF로 다시 보내 달라고 부탁해 보세요.');
+          throw e2;
+        }
+      }
     }
     const total = doc.pageCount();
     for (let i = 0; i < total; i++) {
@@ -468,11 +520,17 @@ img { max-width: 100%; }
     await loadScript(LIB.pdf);
     const pdfjs = window['pdfjs-dist/build/pdf'] || window.pdfjsLib;
     pdfjs.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.min.js', document.baseURI).href;
-    const pdf = await pdfjs.getDocument({ data: bytes, isEvalSupported: false }).promise
-      .catch((e) => {
-        if (e && e.name === 'PasswordException') throw new UserError('암호가 걸린 PDF예요', '보내준 분께 암호 없이 다시 보내 달라고 부탁해 보세요.');
-        throw e;
-      });
+    let pdf = null, password, wrong = false;
+    while (!pdf) {
+      try {
+        pdf = await pdfjs.getDocument({ data: bytes.slice(), password, isEvalSupported: false }).promise;
+      } catch (e) {
+        if (!e || e.name !== 'PasswordException') throw e;
+        wrong = password !== undefined;
+        password = await askPassword(wrong);
+        busy('PDF 문서를 여는 중이에요');
+      }
+    }
     const total = pdf.numPages;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     for (let i = 1; i <= total; i++) {
@@ -495,7 +553,12 @@ img { max-width: 100%; }
   async function renderSheet(bytes) {
     busy('엑셀 표를 여는 중이에요');
     await loadScript(LIB.xlsx);
-    const wb = XLSX.read(bytes, { type: 'array' });
+    let wb;
+    try { wb = XLSX.read(bytes, { type: 'array' }); }
+    catch (e) {
+      if (/password|encrypt/i.test(String(e && e.message))) throw new UserError('비밀번호가 걸린 엑셀은 아직 못 열어요', '보내준 분께 비밀번호 없이, 또는 PDF로 다시 보내 달라고 부탁해 보세요.');
+      throw e;
+    }
     fitMode = 'natural';
     const total = wb.SheetNames.length;
     wb.SheetNames.forEach((name, i) => {
@@ -538,6 +601,7 @@ img { max-width: 100%; }
       const bytes = new Uint8Array(await file.arrayBuffer());
       const kind = await detect(file, bytes);
       if (kind === 'hwp' || kind === 'hwpx') await renderHwp(bytes);
+      else if (kind === 'docx' && bytes[0] === 0xD0 && bytes[1] === 0xCF) throw new UserError('비밀번호가 걸린 워드 문서는 아직 못 열어요', '보내준 분께 비밀번호 없이, 또는 PDF로 다시 보내 달라고 부탁해 보세요.');
       else if (kind === 'docx') await renderDocx(bytes);
       else if (kind === 'pdf') await renderPdf(bytes);
       else if (kind === 'xlsx') await renderSheet(bytes);
