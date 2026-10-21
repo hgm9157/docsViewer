@@ -4,6 +4,5 @@
 
 - HWP 렌더링: [@rhwp/core](https://github.com/edwardkim/rhwp) 0.8.7 (MIT)
 - PDF: pdf.js 3.11.174 / 워드: docx-preview / 엑셀: SheetJS
-- 동영상 줄이기: [Mediabunny](https://mediabunny.dev) 1.61.1 (MPL-2.0, WebCodecs)
 
 GitHub Pages: Settings → Pages → Deploy from a branch → main / (root)
